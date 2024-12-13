@@ -2,10 +2,10 @@ const express = require('express');
 const axios = require('axios');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Slack Bot Token (Replace with your bot token)
-const SLACK_BOT_TOKEN = 'xoxb-your-bot-token';
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
 // Middleware to parse JSON requests
 app.use(express.json());
