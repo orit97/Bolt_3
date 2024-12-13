@@ -19,14 +19,18 @@ app.post('/slack/events', async (req, res) => {
     return res.send(req.body.challenge);
   }
 
-  // Respond to messages
+  // Respond to user messages (ignore bot messages)
   if (type === 'event_callback' && event.type === 'message' && !event.bot_id) {
+    const userMessage = event.text; // User's original message
+    const channelId = event.channel; // Channel where the message was sent
+
     try {
-      await axios.post(
+      // Post the response to the same channel
+      const response = await axios.post(
         'https://slack.com/api/chat.postMessage',
         {
-          channel: event.channel,
-          text: `You said: "${event.text}"`,
+          channel: channelId,
+          text: `You said: "${userMessage}"`,
         },
         {
           headers: {
@@ -35,7 +39,11 @@ app.post('/slack/events', async (req, res) => {
           }
         }
       );
+
+      // Log the bot's response
+      console.log('Message sent successfully:', response.data);
     } catch (error) {
+      // Log detailed error information for debugging
       console.error('Error sending message:', error.response?.data || error.message);
     }
   }
