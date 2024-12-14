@@ -7,20 +7,37 @@ const PORT = process.env.PORT || 3001;
 // Slack Bot Token (Replace with your bot token)
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
-// Mock data for users and their goals
+// Mock data for user goals
 const usersGoals = {
-  U12345: {
-    name: "John Doe",
-    goals: ["Finish project X", "Prepare presentation", "Learn React"],
-  },
-  U67890: {
-    name: "Jane Smith",
-    goals: ["Write blog post", "Complete marketing plan"],
-  },
+  U12345: { name: "John Doe", goals: ["Finish project X", "Learn React"] },
+  U67890: { name: "Jane Smith", goals: ["Write a blog post", "Complete marketing plan"] },
 };
 
 // Middleware to parse JSON requests
 app.use(express.json());
+
+// Function to fetch user info from Slack
+async function fetchUserInfo(userId) {
+  try {
+    const response = await axios.get('https://slack.com/api/users.info', {
+      params: { user: userId },
+      headers: {
+        Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+      },
+    });
+    if (response.data.ok) {
+      return {
+        id: response.data.user.id,
+        name: response.data.user.real_name || response.data.user.profile.display_name,
+      };
+    }
+    console.error('Failed to fetch user info:', response.data);
+    return null;
+  } catch (error) {
+    console.error('Error fetching user info:', error.message);
+    return null;
+  }
+}
 
 // Slack Event Endpoint
 app.post('/slack/events', async (req, res) => {
@@ -31,30 +48,56 @@ app.post('/slack/events', async (req, res) => {
     return res.send(req.body.challenge);
   }
 
-  // Respond to user messages (ignore bot messages)
+  // Handle user messages (ignore bot messages)
   if (type === 'event_callback' && event.type === 'message' && !event.bot_id) {
-    const userId = event.user; // User ID
+    const userId = event.user; // Slack User ID of the sender
     const userMessage = event.text.toLowerCase(); // User's original message in lowercase
     const channelId = event.channel; // Channel where the message was sent
 
     let botResponse = "I didn't understand your request.";
 
-    // Handle user goals
-    if (usersGoals[userId]) {
-      if (userMessage.includes("what are my goals")) {
-        const userGoals = usersGoals[userId].goals.join(", ");
-        botResponse = `Here are your current goals: ${userGoals}`;
-      } else if (userMessage.startsWith("add goal ")) {
-        const newGoal = userMessage.replace("add goal ", "").trim();
+    // Handle personal and third-party goals
+    if (userMessage.includes("what are")) {
+      const mentionedName = userMessage.replace("what are", "").replace("'s goals?", "").trim();
+
+      if (mentionedName) {
+        // Check if we already know this user
+        const user = Object.values(usersGoals).find(
+          (entry) => entry.name.toLowerCase() === mentionedName.toLowerCase()
+        );
+
+        if (user) {
+          // Respond with their goals
+          const goals = user.goals.join(", ");
+          botResponse = `${user.name}'s goals are: ${goals}`;
+        } else {
+          botResponse = `I don't have any goals saved for ${mentionedName}.`;
+        }
+      } else {
+        // If no specific person is mentioned, assume it's the sender
+        if (usersGoals[userId]) {
+          const userGoals = usersGoals[userId].goals.join(", ");
+          botResponse = `Your goals are: ${userGoals}`;
+        } else {
+          botResponse = "I don't have any goals saved for you. Try adding one by saying 'Add goal [goal description]'.";
+        }
+      }
+    } else if (userMessage.startsWith("add goal ")) {
+      const newGoal = userMessage.replace("add goal ", "").trim();
+      if (!usersGoals[userId]) {
+        const userInfo = await fetchUserInfo(userId);
+        if (userInfo) {
+          usersGoals[userId] = { name: userInfo.name, goals: [] };
+        }
+      }
+      if (newGoal) {
         usersGoals[userId].goals.push(newGoal);
         botResponse = `Added a new goal: "${newGoal}"`;
       } else {
-        botResponse =
-          "You can ask me: 'What are my goals?' or 'Add goal [goal description]'.";
+        botResponse = "Please specify a goal after 'Add goal'. For example: 'Add goal Finish my report'.";
       }
     } else {
-      botResponse =
-        "I don't have any goals saved for you. Try adding a goal by saying 'Add goal [goal description]'.";
+      botResponse = "You can ask me: 'What are my goals?' or 'What are [username]'s goals?' or 'Add goal [goal description]'.";
     }
 
     try {
