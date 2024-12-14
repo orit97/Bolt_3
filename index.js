@@ -7,6 +7,18 @@ const PORT = process.env.PORT || 3001;
 // Slack Bot Token (Replace with your bot token)
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 
+// Mock data for users and their goals
+const usersGoals = {
+  U12345: {
+    name: "John Doe",
+    goals: ["Finish project X", "Prepare presentation", "Learn React"],
+  },
+  U67890: {
+    name: "Jane Smith",
+    goals: ["Write blog post", "Complete marketing plan"],
+  },
+};
+
 // Middleware to parse JSON requests
 app.use(express.json());
 
@@ -21,8 +33,29 @@ app.post('/slack/events', async (req, res) => {
 
   // Respond to user messages (ignore bot messages)
   if (type === 'event_callback' && event.type === 'message' && !event.bot_id) {
-    const userMessage = event.text; // User's original message
+    const userId = event.user; // User ID
+    const userMessage = event.text.toLowerCase(); // User's original message in lowercase
     const channelId = event.channel; // Channel where the message was sent
+
+    let botResponse = "I didn't understand your request.";
+
+    // Handle user goals
+    if (usersGoals[userId]) {
+      if (userMessage.includes("what are my goals")) {
+        const userGoals = usersGoals[userId].goals.join(", ");
+        botResponse = `Here are your current goals: ${userGoals}`;
+      } else if (userMessage.startsWith("add goal ")) {
+        const newGoal = userMessage.replace("add goal ", "").trim();
+        usersGoals[userId].goals.push(newGoal);
+        botResponse = `Added a new goal: "${newGoal}"`;
+      } else {
+        botResponse =
+          "You can ask me: 'What are my goals?' or 'Add goal [goal description]'.";
+      }
+    } else {
+      botResponse =
+        "I don't have any goals saved for you. Try adding a goal by saying 'Add goal [goal description]'.";
+    }
 
     try {
       // Post the response to the same channel
@@ -30,7 +63,7 @@ app.post('/slack/events', async (req, res) => {
         'https://slack.com/api/chat.postMessage',
         {
           channel: channelId,
-          text: `You said: "${userMessage}"`,
+          text: botResponse,
         },
         {
           headers: {
